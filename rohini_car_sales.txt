@@ -1,0 +1,450 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+#define MAX_NAME_LENGTH 100
+#define MAX_COMMENT_LENGTH 255
+#define MIN_RATING 1
+#define MAX_RATING 5
+#define MAX_SALES 10
+#define DISCOUNT_PERCENTAGE 0.10f
+#define DISCOUNT_MIN_AGE 18
+#define DISCOUNT_MAX_AGE 25
+#define NUM_CAR_TYPES 5
+
+// Structure to hold feedback data
+typedef struct {
+    int rating;
+    char comment[MAX_COMMENT_LENGTH];
+} Feedback;
+
+char **customer_names = NULL;
+Feedback *feedback_data = NULL;
+unsigned short *car_type_per_sale = NULL;
+unsigned short *cars_sold_per_sale = NULL;
+unsigned short number_of_sales = 0;
+unsigned short cars_available = 75;
+unsigned short car_amounts[] = { 5, 10, 15, 20, 25 };
+char *car_types[] = { "SEDAN", "SUV", "SPORTS", "HATCHBACK", "CONVERTIBLE" };
+float car_prices[] = { 75000.0f, 80000.0f, 95000.0f, 56000.0f, 88000.0f };
+int car_years[] = {2010, 2015, 2020, 2022, 2021};
+
+void pause_program() {
+    printf("\nPress Enter to continue...");
+    getchar();
+}
+
+// to validate rating
+int validate_rating(int rating) {
+    if (rating >= MIN_RATING && rating <= MAX_RATING) {
+        return 1;
+    } else {
+        printf("Invalid rating. Please provide a rating between %d and %d.\n", MIN_RATING, MAX_RATING);
+        pause_program();
+        return 0;
+    }
+}
+
+// to validate customer name
+int validate_customer_name(char *customer_name) {
+    if (customer_name == NULL || strlen(customer_name) == 0) {
+        printf("Customer name cannot be empty.\n");
+        pause_program();
+        return 0;
+    }
+    for (int i = 0; i < strlen(customer_name); i++) {
+        if (!isalpha(customer_name[i]) && customer_name[i] != ' ') {
+            printf("Customer name can only contain letters and spaces.\n");
+            pause_program();
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// to validate feedback
+int validate_feedback_comment(char *comment) {
+    if (comment == NULL || strlen(comment) == 0) {
+        return 1;
+    }
+    if (strlen(comment) >= MAX_COMMENT_LENGTH) {
+        printf("Comment is too long. Maximum length is %d characters.\n", MAX_COMMENT_LENGTH);
+        pause_program();
+        return 0;
+    }
+    return 1;
+}
+
+// price is the original price of the car
+float apply_discount(float price) {
+    return price * (1 - DISCOUNT_PERCENTAGE);
+}
+
+// saving sales data to a file
+void saveDataToFile() {
+    FILE *file = fopen("sales_data.csv", "w");
+    if (file == NULL) {
+        perror("Failed to open sales_data.csv");
+        return;
+    }
+
+    // Write CSV header
+    fprintf(file, "CustomerName,CarType,UnitsSold,TotalPrice,Rating,Feedback\n");
+
+    for (int i = 0; i < number_of_sales; i++) {
+        int car_type = car_type_per_sale[i];
+        float total_price = cars_sold_per_sale[i] * car_prices[car_type];
+
+        fprintf(file, "\"%s\",%s,%d,%.2f,%d,\"%s\"\n",
+                customer_names[i],
+                car_types[car_type],
+                cars_sold_per_sale[i],
+                total_price,
+                feedback_data[i].rating,
+                feedback_data[i].comment);
+    }
+
+    fclose(file);
+}
+
+void add_sale() {
+    if (number_of_sales >= MAX_SALES) {
+        printf("Maximum number of sales (%d) reached. Cannot add more sales.\n", MAX_SALES);
+        pause_program();
+        return;
+    }
+
+    char name[MAX_NAME_LENGTH];
+    int car_type, cars_needed, customer_age;
+    int rating;
+    char comment[MAX_COMMENT_LENGTH];
+    char continue_choice[MAX_NAME_LENGTH];
+
+    // Get customer name
+    printf("Enter customer name: ");
+    getchar(); // Clear any leftover newline from previous input
+    fgets(name, MAX_NAME_LENGTH, stdin);
+    name[strcspn(name, "\n")] = '\0'; // Remove newline at the end
+
+    // Validate customer name
+    if (!validate_customer_name(name)) return;
+
+    // Display car types and allow user to select car type
+    while (1) {
+        printf("Available car types:\n");
+        for (int i = 0; i < 5; i++) {
+            printf("%d - %s\n", i, car_types[i]);
+        }
+
+        // Get car type
+        printf("Enter car type: ");
+        scanf("%d", &car_type);
+        if (car_type < 0 || car_type >= 5) {
+            printf("Invalid car type selected.\n");
+            pause_program();
+            return;
+        }
+
+        // Display selected car price
+        printf("Car price for selected type (%s): %.2f GBP\n", car_types[car_type], car_prices[car_type]);
+
+        // Ask if user wants to continue or change car type
+        printf("\nDo you want to continue with this car type? (y/n): ");
+        getchar(); // Clear the newline character from the buffer
+        fgets(continue_choice, MAX_NAME_LENGTH, stdin);
+        continue_choice[strcspn(continue_choice, "\n")] = '\0'; // Remove newline
+
+        // Convert the response to lowercase for easy comparison
+        char user_choice = tolower(continue_choice[0]);
+
+        if (user_choice == 'y') {
+            break; // Continue with the selected car type
+        } else if (user_choice == 'n') {
+            continue; // Go back to the car type selection
+        } else {
+            printf("Invalid option! Please type 'y' or 'n'.\n");
+        }
+    }
+
+    // Get number of cars to purchase
+    printf("Enter number of cars to purchase: ");
+    scanf("%d", &cars_needed);
+
+    if (cars_needed <= 0) {
+        printf("Units sold must be a positive number.\n");
+        pause_program();
+        return;
+    }
+
+    // Check if enough cars are available
+    if (cars_needed > car_amounts[car_type]) {
+        printf("Not enough cars of type %s in stock.\n", car_types[car_type]);
+        pause_program();
+        return;
+    }
+
+    // Get customer age
+    printf("Enter customer age: ");
+    scanf("%d", &customer_age);
+
+    // Calculate total price and apply discount if eligible
+    float total_price = cars_needed * car_prices[car_type];
+
+    float discount_percentage = 0.0f; // Default: No discount
+    if (customer_age >= DISCOUNT_MIN_AGE && customer_age <= DISCOUNT_MAX_AGE) {
+        discount_percentage = DISCOUNT_PERCENTAGE * 100; // Convert to percentage
+        printf("You are eligible for a %.2f%% discount!\n", discount_percentage);
+        total_price = apply_discount(total_price); // Apply discount
+    } else {
+        printf("No discount applied!\n");
+    }
+
+    // Display the price breakdown
+    printf("\nNumber of cars selected: %d\n", cars_needed);
+    printf("Total amount before discount: %.2f GBP\n", cars_needed * car_prices[car_type]);
+    printf("Total amount after applying %.2f%% discount: %.2f GBP\n", discount_percentage, total_price);
+
+    // Get customer feedback
+    printf("Please rate your purchase (1-5): ");
+    scanf("%d", &rating);
+    if (!validate_rating(rating)) return;
+
+    getchar(); // Consume newline after rating
+    printf("Please provide feedback (optional, press Enter to skip): ");
+    fgets(comment, MAX_COMMENT_LENGTH, stdin);
+    comment[strcspn(comment, "\n")] = '\0'; // Remove newline
+
+    if (!validate_feedback_comment(comment)) return;
+
+    // Add sale data to the system
+    number_of_sales++;
+    customer_names = realloc(customer_names, number_of_sales * sizeof(char*));
+    feedback_data = realloc(feedback_data, number_of_sales * sizeof(Feedback));
+    car_type_per_sale = realloc(car_type_per_sale, number_of_sales * sizeof(unsigned short));
+    cars_sold_per_sale = realloc(cars_sold_per_sale, number_of_sales * sizeof(unsigned short));
+
+    // Check memory allocation success
+    if (customer_names == NULL || feedback_data == NULL || car_type_per_sale == NULL || cars_sold_per_sale == NULL) {
+        printf("Memory allocation failed.\n");
+        exit(1);
+    }
+
+    customer_names[number_of_sales - 1] = malloc(sizeof(char) * MAX_NAME_LENGTH);
+    if (customer_names[number_of_sales - 1] == NULL) {
+        printf("Memory allocation failed for customer name.\n");
+        exit(1);
+    }
+    strncpy(customer_names[number_of_sales - 1], name, MAX_NAME_LENGTH);
+
+    feedback_data[number_of_sales - 1].rating = rating;
+    strncpy(feedback_data[number_of_sales - 1].comment, comment, MAX_COMMENT_LENGTH);
+
+    car_type_per_sale[number_of_sales - 1] = car_type;
+    cars_sold_per_sale[number_of_sales - 1] = cars_needed;
+
+    // Update car stock
+    cars_available -= cars_needed;
+    car_amounts[car_type] -= cars_needed;
+
+    printf("Sale added successfully.\n");
+    pause_program();
+
+    // Save the sale data to a file
+    saveDataToFile();
+}
+
+void view_sales_stats() {
+    if (number_of_sales == 0) {
+        printf("No sales have been made yet.\n");
+        return;
+    }
+    for (int i = 0; i < number_of_sales; i++) {
+        int car_type = car_type_per_sale[i];
+        float total_price = cars_sold_per_sale[i] * car_prices[car_type];
+
+        printf("Sale %d | Car Type: %s | Cars Sold: %d | Total Price: %.2f GBP | Customer: %s | Rating: %d | Feedback: %s\n",
+               i + 1, car_types[car_type], cars_sold_per_sale[i], total_price,
+               customer_names[i], feedback_data[i].rating, feedback_data[i].comment);
+    }
+
+    for (int i = 0; i < 5; i++) {
+        int total_sold = 0;
+        float total_revenue = 0;
+        for (int j = 0; j < number_of_sales; j++) {
+            if (car_type_per_sale[j] == i) {
+                total_sold += cars_sold_per_sale[j];
+                total_revenue += cars_sold_per_sale[j] * car_prices[i];
+            }
+        }
+        if (total_sold > 0) {
+            printf("%s sold %d unit(s) for a total of %.2f GBP\n", car_types[i], total_sold, total_revenue);
+        }
+    }
+    pause_program();
+}
+
+void view_cars_stock() {
+    for (int i = 0; i < 4; i++) {
+        for (int j = i + 1; j < 5; j++) {
+            if (car_years[i] < car_years[j]) {
+                int temp_year = car_years[i];
+                car_years[i] = car_years[j];
+                car_years[j] = temp_year;
+
+                float temp_price = car_prices[i];
+                car_prices[i] = car_prices[j];
+                car_prices[j] = temp_price;
+
+                unsigned short temp_amount = car_amounts[i];
+                car_amounts[i] = car_amounts[j];
+                car_amounts[j] = temp_amount;
+
+                char *temp_type = car_types[i];
+                car_types[i] = car_types[j];
+                car_types[j] = temp_type;
+            }
+        }
+    }
+
+    printf("Car Stock (Sorted by Year of Manufacture):-\n");
+    printf("-----------------------------------------\n");
+    for (int i = 0; i < 5; i++) {
+        printf("Model: %s | Year: %d | Remaining Amount: %d | Price: %.2f GBP\n",
+               car_types[i], car_years[i], car_amounts[i], car_prices[i]);
+    }
+}
+
+void view_feedback() {
+    if (number_of_sales == 0) {
+        printf("No feedback available yet.\n");
+        return;
+    }
+    for (int i = 0; i < number_of_sales; i++) {
+        printf("Sale %d | Customer: %s | Rating: %d | Feedback: %s\n",
+               i + 1, customer_names[i], feedback_data[i].rating, feedback_data[i].comment);
+    }
+    pause_program();
+}
+
+void cleanup() {
+    for (int i = 0; i < number_of_sales; i++) {
+        free(customer_names[i]);
+        customer_names[i] = NULL;  // Prevent access to freed memory
+    }
+    free(customer_names);
+    free(feedback_data);
+    free(car_type_per_sale);
+    free(cars_sold_per_sale);
+}
+
+void getDataFromFile() {
+    FILE *file = fopen("sales_data.csv", "r");
+    if (file == NULL) {
+        printf("No previous sales data found (sales_data.csv not found).\n");
+        return;
+    }
+
+    char line[512];
+    fgets(line, sizeof(line), file); // Skip header line
+
+    while (fgets(line, sizeof(line), file)) {
+        char customer[MAX_NAME_LENGTH];
+        char car_type[50];
+        char feedback[MAX_COMMENT_LENGTH];
+        int units_sold, rating;
+        float total_price;
+
+        // CSV format: "CustomerName",CarType,UnitsSold,TotalPrice,Rating,"Feedback"
+        sscanf(line, "\"%[^\"]\",%[^,],%d,%f,%d,\"%[^\"]\"",
+               customer, car_type, &units_sold, &total_price, &rating, feedback);
+
+        // Find the index of the car type
+        int car_type_index = -1;
+        for (int i = 0; i < NUM_CAR_TYPES; i++) {
+            if (strcmp(car_types[i], car_type) == 0) {
+                car_type_index = i;
+                break;
+            }
+        }
+
+        if (car_type_index == -1) {
+            printf("Unknown car type in file: %s\n", car_type);
+            continue;
+        }
+
+        // Allocate memory and store the data
+        number_of_sales++;
+        customer_names = realloc(customer_names, number_of_sales * sizeof(char*));
+        feedback_data = realloc(feedback_data, number_of_sales * sizeof(Feedback));
+        car_type_per_sale = realloc(car_type_per_sale, number_of_sales * sizeof(unsigned short));
+        cars_sold_per_sale = realloc(cars_sold_per_sale, number_of_sales * sizeof(unsigned short));
+
+        if (!customer_names || !feedback_data || !car_type_per_sale || !cars_sold_per_sale) {
+            printf("Memory allocation failed during file load.\n");
+            fclose(file);
+            return;
+        }
+
+        customer_names[number_of_sales - 1] = malloc(MAX_NAME_LENGTH);
+        strncpy(customer_names[number_of_sales - 1], customer, MAX_NAME_LENGTH);
+
+        feedback_data[number_of_sales - 1].rating = rating;
+        strncpy(feedback_data[number_of_sales - 1].comment, feedback, MAX_COMMENT_LENGTH);
+
+        car_type_per_sale[number_of_sales - 1] = car_type_index;
+        cars_sold_per_sale[number_of_sales - 1] = units_sold;
+
+        // Update inventory
+        cars_available -= units_sold;
+        car_amounts[car_type_index] -= units_sold;
+    }
+
+    fclose(file);
+}
+
+void menu() {
+    char user_choice;
+    do {
+        printf("\n-----------------------");
+        printf("\nWelcome to Car Sales!!!\n");
+        printf("-----------------------");
+        printf("\n1. View Cars Stock\n");
+        printf("2. Buy Cars\n");
+        printf("3. View Sales Data\n");
+        printf("4. Customer Feedback\n");
+        printf("5. Exit\n");
+        printf("-----------------------");
+        printf("\nEnter choice: ");
+        scanf(" %c", &user_choice);
+
+        switch (user_choice) {
+            case '1':
+                view_cars_stock();
+                break;
+            case '2': {
+                add_sale();
+                break;
+            }
+            case '3':
+                view_sales_stats();
+                break;
+            case '4':
+                view_feedback();
+                break;
+            case '5':
+                printf("Exiting program...\n");
+                cleanup();
+                break;
+            default:
+                printf("Invalid choice. Please try again.\n");
+                break;
+        }
+    } while (user_choice != '5');
+}
+
+int main() {
+    getDataFromFile(); // Load previous data if exists
+    menu();
+    return 0;
+}
