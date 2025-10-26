@@ -2,7 +2,6 @@
 
 **Project:** Car Sales Management System  
 **Language:** C  
-**Date:** April 2025  
 **Prepared by:** Rohini Manikandan  
 **Course:** BEng Computer Science, Anglia Ruskin University, Cambridge  
 
